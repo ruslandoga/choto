@@ -7,7 +7,7 @@ defmodule Choto.Encoder do
   def encode(:varint, num), do: <<1::1, num::7, encode(:varint, num >>> 7)::bytes>>
 
   def encode(:string, str) do
-    [encode(:varint, byte_size(str)), str]
+    [encode(:varint, byte_size(str)) | str]
   end
 
   # TODO is it always little endian , even if machine is big endian? should it be native endian?

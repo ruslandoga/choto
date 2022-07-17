@@ -84,7 +84,7 @@ defmodule ChotoTest do
              # client hello code
              <<0>>,
              # client name
-             [<<5>>, "choto"],
+             [<<5>> | "choto"],
              # version major
              "\x01",
              # version minor
@@ -92,11 +92,11 @@ defmodule ChotoTest do
              # revision = 54456
              "\xB8\xA9\x03",
              # database
-             ["\n", "helloworld"],
+             ["\n" | "helloworld"],
              # username
-             ["\a", "default"],
+             ["\a" | "default"],
              # password
-             [<<0>>, ""]
+             [<<0>> | ""]
            ]
 
     assert IO.iodata_to_binary(client_hello) ==
@@ -132,21 +132,21 @@ defmodule ChotoTest do
 
     assert client_query == [
              <<1>>,
-             [<<0>>, ""],
+             [<<0>> | ""],
              [
                <<1>>,
-               [<<0>>, ""],
-               [<<0>>, ""],
-               ["\t", "0.0.0.0:0"],
+               [<<0>> | ""],
+               [<<0>> | ""],
+               ["\t" | "0.0.0.0:0"],
                <<0, 0, 0, 0, 0, 0, 0, 0>>,
                <<1>>,
-               [<<1>>, "q"],
-               [<<4>>, "mac3"],
-               [<<5>>, "choto"],
+               [<<1>> | "q"],
+               [<<4>> | "mac3"],
+               [<<5>> | "choto"],
                <<1>>,
                <<1>>,
                "\xB5\xA9\x03",
-               [<<0>>, ""],
+               [<<0>> | ""],
                <<0>>,
                <<3>>,
                <<0>>,
@@ -155,11 +155,11 @@ defmodule ChotoTest do
                <<0>>
              ],
              [],
-             [<<0>>, ""],
-             [<<0>>, ""],
+             [<<0>> | ""],
+             [<<0>> | ""],
              <<2>>,
              <<0>>,
-             ["\f", "select 1 + 1"]
+             ["\f" | "select 1 + 1"]
            ]
 
     assert IO.iodata_to_binary(client_query) ==
