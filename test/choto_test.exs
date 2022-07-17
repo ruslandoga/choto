@@ -16,7 +16,7 @@ defmodule ChotoTest do
     # buffer.PutUVarInt(uint64(rows))
     _rest_after = "\0\0"
 
-    assert Choto.Decoder.decode(from_cli, :struct,
+    assert decode_fields(from_cli,
              code: :varint,
              query_id: :string,
              query_kind: :u8,
@@ -84,7 +84,7 @@ defmodule ChotoTest do
              # client hello code
              <<0>>,
              # client name
-             [<<5>>, "choto"],
+             [<<5>> | "choto"],
              # version major
              "\x01",
              # version minor
@@ -92,11 +92,11 @@ defmodule ChotoTest do
              # revision = 54456
              "\xB8\xA9\x03",
              # database
-             ["\n", "helloworld"],
+             ["\n" | "helloworld"],
              # username
-             ["\a", "default"],
+             ["\a" | "default"],
              # password
-             [<<0>>, ""]
+             [<<0>> | ""]
            ]
 
     assert IO.iodata_to_binary(client_hello) ==
@@ -108,7 +108,7 @@ defmodule ChotoTest do
 
     assert data == "\nClickHouse\x16\a\xB8\xA9\x03\rEurope/Moscow\nmac3.local\x01"
 
-    assert Choto.Decoder.decode(data, :struct,
+    assert decode_fields(data,
              name: :string,
              version_major: :varint,
              version_minor: :varint,
@@ -132,21 +132,21 @@ defmodule ChotoTest do
 
     assert client_query == [
              <<1>>,
-             [<<0>>, ""],
+             [<<0>> | ""],
              [
                <<1>>,
-               [<<0>>, ""],
-               [<<0>>, ""],
-               ["\t", "0.0.0.0:0"],
+               [<<0>> | ""],
+               [<<0>> | ""],
+               ["\t" | "0.0.0.0:0"],
                <<0, 0, 0, 0, 0, 0, 0, 0>>,
                <<1>>,
-               [<<1>>, "q"],
-               [<<4>>, "mac3"],
-               [<<5>>, "choto"],
+               [<<1>> | "q"],
+               [<<4>> | "mac3"],
+               [<<5>> | "choto"],
                <<1>>,
                <<1>>,
                "\xB5\xA9\x03",
-               [<<0>>, ""],
+               [<<0>> | ""],
                <<0>>,
                <<3>>,
                <<0>>,
@@ -155,11 +155,11 @@ defmodule ChotoTest do
                <<0>>
              ],
              [],
-             [<<0>>, ""],
-             [<<0>>, ""],
+             [<<0>> | ""],
+             [<<0>> | ""],
              <<2>>,
              <<0>>,
-             ["\f", "select 1 + 1"]
+             ["\f" | "select 1 + 1"]
            ]
 
     assert IO.iodata_to_binary(client_query) ==
@@ -209,11 +209,25 @@ defmodule ChotoTest do
 
     on_exit(fn -> :gen_tcp.close(socket) end)
   end
+
+  def decode_fields(bytes, fields) do
+    alias Choto.Decoder
+    types = Enum.map(fields, fn {_key, type} -> type end)
+
+    case Decoder.decode(bytes, types) do
+      {:ok, rest, values} ->
+        keys = Enum.map(fields, fn {key, _type} -> key end)
+        {:ok, Enum.zip(keys, values), rest}
+
+      other ->
+        other
+    end
+  end
 end
 
 # 2 = server exception
 # {:ok, <<2, exception::bytes>>} ->
-#   assert Choto.Decoder.decode(
+#   assert decode_fields(
 #            exception,
 #            :struct,
 #            code: :i32,
