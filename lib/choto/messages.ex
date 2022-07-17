@@ -1,5 +1,6 @@
+# TODO maybe just Choto.Codec with both primitive types and "messages"
 defmodule Choto.Messages do
-  alias Choto.{Encoder, Decoder}
+  alias Choto.Encoder
 
   @client_hello 0
   @client_query 1
@@ -7,11 +8,11 @@ defmodule Choto.Messages do
   # @client_cancel 3
   @client_ping 4
   # @client_table_status 5
-  @server_hello 0
+  # @server_hello 0
   # @server_data 1
-  @server_exception 2
+  # @server_exception 2
   # @server_progress 3
-  @server_pong 4
+  # @server_pong 4
   # @server_end_of_stream 5
   # @server_profile_info 6
   # @server_totals 7
@@ -129,41 +130,5 @@ defmodule Choto.Messages do
       # number_of_current_replica
       Encoder.encode(:varint, 0)
     ]
-  end
-
-  def decode(<<@server_hello, rest::bytes>>) do
-    Decoder.decode(
-      rest,
-      :struct,
-      _spec = [
-        server_name: :string,
-        server_version_major: :varint,
-        server_version_minor: :varint,
-        server_revision: :varint,
-        # >= 54058
-        server_timezone: :string,
-        # >= 54372
-        server_display_name: :string,
-        server_version_patch: :varint
-      ]
-    )
-  end
-
-  def decode(<<@server_exception, rest::bytes>>) do
-    Decoder.decode(
-      rest,
-      :struct,
-      _spec = [
-        code: :i32,
-        name: :string,
-        message: :string,
-        stack_trace: :string,
-        has_nested: :boolean
-      ]
-    )
-  end
-
-  def decode(<<@server_pong, rest::bytes>>) do
-    {:ok, :pong, rest}
   end
 end
