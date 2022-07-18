@@ -26,7 +26,8 @@ defmodule Choto.MixProject do
   defp deps do
     [
       {:nimble_lz4, "~> 0.1.2"},
-      {:rexbug, "~> 1.0", only: [:dev, :test]}
+      {:rexbug, "~> 1.0", only: [:dev, :test]},
+      {:benchee, "~> 1.1", only: [:bench], runtime: false}
     ]
   end
 end
