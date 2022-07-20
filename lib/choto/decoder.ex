@@ -71,7 +71,7 @@ defmodule Choto.Decoder do
     _decode(rest, types, [date | acc])
   end
 
-  defp _decode(<<seconds_since_epoch::32-little-unsigned, rest::bytes>>, [:datetime, types], acc) do
+  defp _decode(<<seconds_since_epoch::32-little-unsigned, rest::bytes>>, [:datetime | types], acc) do
     date_time = NaiveDateTime.add(@epoch_naive_datetime, seconds_since_epoch)
     _decode(rest, types, [date_time | acc])
   end
