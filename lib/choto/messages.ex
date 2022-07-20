@@ -43,60 +43,6 @@ defmodule Choto.Messages do
   # Coordinator's decision with a modified set of mark ranges allowed to read
   # @client_merge_tree_read_task_response 10
 
-  #######################
-  # server packet types #
-  #######################
-
-  # Name, version, revision.
-  # @server_hello 0
-
-  # A block of data (compressed or not).
-  # @server_data 1
-
-  # The exception during query execution.
-  # @server_exception 2
-
-  # Query execution progress: rows read, bytes read.
-  # @server_progress 3
-
-  # Ping response
-  # @server_pong 4
-
-  # All packets were transmitted
-  # @server_end_of_stream 5
-
-  # Packet with profiling info.
-  # @server_profile_info 6
-
-  # A block with totals (compressed or not).
-  # @server_totals 7
-
-  # A block with minimums and maximums (compressed or not).
-  # @server_extremes 8
-
-  # A response to TablesStatus request.
-  # @server_table_status_response 9
-
-  # System logs of the query execution
-  # @server_log 10
-
-  # Columns' description for default values calculation
-  # @server_table_columns 11
-
-  # List of unique parts ids.
-  # @server_part_uuids 12
-
-  # String (UUID) describes a request for which next task is needed
-  # This is such an inverted logic, where server sends requests
-  # And client returns back response
-  # @server_read_task_request 13
-
-  # Packet with profile events from server.
-  # @server_profile_events 14
-
-  # Request from a MergeTree replica to a coordinator
-  # @server_merge_tree_read_task_request 15
-
   # see https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/ProtocolDefines.h
 
   # @min_revision_with_client_info 54032
@@ -113,6 +59,8 @@ defmodule Choto.Messages do
   # @min_protocol_version_with_incremental_profile_events 54451
   @min_revision_with_parallel_replicas 54453
   @tcp_protocol_version @min_revision_with_parallel_replicas
+
+  def revision, do: @tcp_protocol_version
 
   def client_hello(database_name, username, password) do
     [
