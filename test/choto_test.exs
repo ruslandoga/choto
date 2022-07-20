@@ -1,5 +1,6 @@
 defmodule ChotoTest do
   use ExUnit.Case
+  alias Choto.Decoder
 
   test "query" do
     # this is what clickhouse cli sends
@@ -207,77 +208,18 @@ defmodule ChotoTest do
     # the description of resulting columns before executing the query.
     # Using this block the client can initialize the output formatter and display the prefix of resulting table
     # beforehand.
-    {:ok, <<1, data::bytes>>} = :gen_tcp.recv(socket, 0)
-    assert data == "\0\x01\0\x02\xFF\xFF\xFF\xFF\0\x01\0\nplus(1, 1)\x06UInt16"
 
-    assert {:ok,
-            [
-              unknown: 0,
-              block_info_field1: 1,
-              block_info_is_overflow: 0,
-              block_info_field2: 2,
-              block_info_bucket_num: -1,
-              block_info_num3: 0,
-              num_columns: 1,
-              num_rows: 0
-            ],
-            columns} =
-             decode_fields(data,
-               unknown: :varint,
-               # block info
-               block_info_field1: :varint,
-               block_info_is_overflow: :u8,
-               block_info_field2: :varint,
-               block_info_bucket_num: :i32,
-               block_info_num3: :varint,
-               # block content
-               num_columns: :varint,
-               num_rows: :varint
-             )
-
-    assert columns == "\nplus(1, 1)\x06UInt16"
-
-    assert decode_fields(columns, name: :string, type: :string) ==
-             {:ok, [name: "plus(1, 1)", type: "UInt16"], ""}
+    # TODO what is this 0?
+    {:ok, <<1, 0, block::bytes>>} = :gen_tcp.recv(socket, 0)
+    assert block == "\x01\0\x02\xFF\xFF\xFF\xFF\0\x01\0\nplus(1, 1)\x06UInt16"
+    # TODO split columns from rows? %{columns: ["plus(1, 1)"], rows: [[]]}
+    assert {:ok, "", [[{"plus(1, 1)", :u16}]]} = Decoder.decode_block(block)
 
     # TODO just receive until exception or EOS, don't hardcode packet sizes
 
-    {:ok, <<1, data::bytes>>} = :gen_tcp.recv(socket, byte_size(data) + 3)
-    assert data == "\0\x01\0\x02\xFF\xFF\xFF\xFF\0\x01\x01\nplus(1, 1)\x06UInt16\x02\0"
-
-    assert {:ok,
-            [
-              unknown: 0,
-              block_info_field1: 1,
-              block_info_is_overflow: 0,
-              block_info_field2: 2,
-              block_info_bucket_num: -1,
-              block_info_num3: 0,
-              num_columns: 1,
-              num_rows: 1
-            ],
-            content} =
-             decode_fields(data,
-               unknown: :varint,
-               # block info
-               block_info_field1: :varint,
-               block_info_is_overflow: :u8,
-               block_info_field2: :varint,
-               block_info_bucket_num: :i32,
-               block_info_num3: :varint,
-               # block content
-               num_columns: :varint,
-               num_rows: :varint
-             )
-
-    assert content == "\nplus(1, 1)\x06UInt16\x02\0"
-
-    assert {:ok, [name: "plus(1, 1)", type: "UInt16"], rows} =
-             decode_fields(content, name: :string, type: :string)
-
-    assert rows == "\x02\0"
-
-    assert decode_fields(rows, plus: :u16) == {:ok, [plus: 2], ""}
+    {:ok, <<1, 0, block::bytes>>} = :gen_tcp.recv(socket, byte_size(block) + 4)
+    assert block == "\x01\0\x02\xFF\xFF\xFF\xFF\0\x01\x01\nplus(1, 1)\x06UInt16\x02\0"
+    assert {:ok, "", [[{"plus(1, 1)", :u16}, 2]]} = Decoder.decode_block(block)
 
     # 6 = profile info
     {:ok, <<6, data::bytes>>} = :gen_tcp.recv(socket, 8)
@@ -323,147 +265,68 @@ defmodule ChotoTest do
               ], ""}
 
     # 14 = profile events
-    {:ok, <<14, data::bytes>>} = :gen_tcp.recv(socket, 764)
+    {:ok, <<14, 0, block::bytes>>} = :gen_tcp.recv(socket, 764)
 
-    # assert data == "\0\x01\0\x02\xFF\xFF\xFF\xFF\0\x06\r\thost_name\x06String\nmac3.local\nmac3.local\nmac3.local\nmac3.local\nmac3.local\nmac3.local\nmac3.local\nmac3.local\nmac3.local\nmac3.local\nmac3.local\nmac3.local\nmac3.local\fcurrent_time\bDateTimeQ\xEB\xD7bQ\xEB\xD7bQ\xEB\xD7bQ\xEB\xD7bQ\xEB\xD7bQ\xEB\xD7bQ\xEB\xD7bQ\xEB\xD7bQ\xEB\xD7bQ\xEB\xD7bQ\xEB\xD7bQ\xEB\xD7bQ\xEB\xD7b\tthread_id\x06UInt64\xCA\xCFq\0\0\0\0\0\xCA\xCFq\0\0\0\0\0\xCA\xCFq\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x04type#Enum8('increment' = 1, 'gauge' = 2)\x01\x01\x02\x01\x01\x01\x01\x01\x01\x01\x01\x01\x02\x04name\x06String\fSelectedRows\rSelectedBytes\x12MemoryTrackerUsage\x05Query\vSelectQuery\x1ENetworkSendElapsedMicroseconds\x10NetworkSendBytes\fSelectedRows\rSelectedBytes\vContextLock\x17RWLockAcquiredReadLocks\x14RealTimeMicroseconds\x12MemoryTrackerUsage\x05value\x05Int64\x01\0\0\0\0\0\0\0\x01\0\0\0\0\0\0\0\xE0!\0\0\0\0\0\0\x01\0\0\0\0\0\0\0\x01\0\0\0\0\0\0\0Z\0\0\0\0\0\0\0L\0\0\0\0\0\0\0\x01\0\0\0\0\0\0\0\x01\0\0\0\0\0\0\0\n\0\0\0\0\0\0\0\x01\0\0\0\0\0\0\0A\0\0\0\0\0\0\0\xE0!\0\0\0\0\0\0"
+    # assert block == "\0\x01\0\x02\xFF\xFF\xFF\xFF\0\x06\r\thost_name\x06String\nmac3.local\nmac3.local\nmac3.local\nmac3.local\nmac3.local\nmac3.local\nmac3.local\nmac3.local\nmac3.local\nmac3.local\nmac3.local\nmac3.local\nmac3.local\fcurrent_time\bDateTimeQ\xEB\xD7bQ\xEB\xD7bQ\xEB\xD7bQ\xEB\xD7bQ\xEB\xD7bQ\xEB\xD7bQ\xEB\xD7bQ\xEB\xD7bQ\xEB\xD7bQ\xEB\xD7bQ\xEB\xD7bQ\xEB\xD7bQ\xEB\xD7b\tthread_id\x06UInt64\xCA\xCFq\0\0\0\0\0\xCA\xCFq\0\0\0\0\0\xCA\xCFq\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x04type#Enum8('increment' = 1, 'gauge' = 2)\x01\x01\x02\x01\x01\x01\x01\x01\x01\x01\x01\x01\x02\x04name\x06String\fSelectedRows\rSelectedBytes\x12MemoryTrackerUsage\x05Query\vSelectQuery\x1ENetworkSendElapsedMicroseconds\x10NetworkSendBytes\fSelectedRows\rSelectedBytes\vContextLock\x17RWLockAcquiredReadLocks\x14RealTimeMicroseconds\x12MemoryTrackerUsage\x05value\x05Int64\x01\0\0\0\0\0\0\0\x01\0\0\0\0\0\0\0\xE0!\0\0\0\0\0\0\x01\0\0\0\0\0\0\0\x01\0\0\0\0\0\0\0Z\0\0\0\0\0\0\0L\0\0\0\0\0\0\0\x01\0\0\0\0\0\0\0\x01\0\0\0\0\0\0\0\n\0\0\0\0\0\0\0\x01\0\0\0\0\0\0\0A\0\0\0\0\0\0\0\xE0!\0\0\0\0\0\0"
 
-    assert {:ok,
+    assert {:ok, "",
             [
-              unknown: 0,
-              block_info_field1: 1,
-              block_info_is_overflow: 0,
-              block_info_field2: 2,
-              block_info_bucket_num: -1,
-              block_info_num3: 0,
-              num_columns: _num_columns = 6,
-              num_rows: num_rows = 13
-            ],
-            content} =
-             decode_fields(data,
-               unknown: :varint,
-               # block info
-               block_info_field1: :varint,
-               block_info_is_overflow: :u8,
-               block_info_field2: :varint,
-               block_info_bucket_num: :i32,
-               block_info_num3: :varint,
-               # block content
-               num_columns: :varint,
-               num_rows: :varint
-             )
-
-    # col 1
-    assert {:ok, [name: "host_name", type: "String"], rest} =
-             decode_fields(content, name: :string, type: :string)
-
-    assert {:ok, rest,
-            _host_name_rows = [
-              "mac3.local",
-              "mac3.local",
-              "mac3.local",
-              "mac3.local",
-              "mac3.local",
-              "mac3.local",
-              "mac3.local",
-              "mac3.local",
-              "mac3.local",
-              "mac3.local",
-              "mac3.local",
-              "mac3.local",
-              "mac3.local"
-            ]} = Choto.Decoder.decode(rest, List.duplicate(:string, num_rows))
-
-    # col 2
-    assert {:ok, [name: "current_time", type: "DateTime"], rest} =
-             decode_fields(rest, name: :string, type: :string)
-
-    assert {:ok, rest,
-            _current_time_rows = [
-              %NaiveDateTime{},
-              %NaiveDateTime{},
-              %NaiveDateTime{},
-              %NaiveDateTime{},
-              %NaiveDateTime{},
-              %NaiveDateTime{},
-              %NaiveDateTime{},
-              %NaiveDateTime{},
-              %NaiveDateTime{},
-              %NaiveDateTime{},
-              %NaiveDateTime{},
-              %NaiveDateTime{},
-              %NaiveDateTime{}
-            ]} = Choto.Decoder.decode(rest, List.duplicate(:datetime, num_rows))
-
-    # col 3
-    assert {:ok, [name: "thread_id", type: "UInt64"], rest} =
-             decode_fields(rest, name: :string, type: :string)
-
-    assert {:ok, rest, _thread_id_rows = [_, _, _, _, _, _, _, _, _, _, _, _, _]} =
-             Choto.Decoder.decode(rest, List.duplicate(:u64, num_rows))
-
-    # col 4
-    assert {:ok, [name: "type", type: "Enum8('increment' = 1, 'gauge' = 2)"], rest} =
-             decode_fields(rest, name: :string, type: :string)
-
-    assert {:ok, rest, _type_rows = [1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2]} =
-             Choto.Decoder.decode(rest, List.duplicate(:u8, num_rows))
-
-    # col 5
-    assert {:ok, [name: "name", type: "String"], rest} =
-             decode_fields(rest, name: :string, type: :string)
-
-    assert {:ok, rest,
-            _name_rows = [
-              "SelectedRows",
-              "SelectedBytes",
-              "MemoryTrackerUsage",
-              "Query",
-              "SelectQuery",
-              "NetworkSendElapsedMicroseconds",
-              "NetworkSendBytes",
-              "SelectedRows",
-              "SelectedBytes",
-              "ContextLock",
-              "RWLockAcquiredReadLocks",
-              "RealTimeMicroseconds",
-              "MemoryTrackerUsage"
-            ]} = Choto.Decoder.decode(rest, List.duplicate(:string, num_rows))
-
-    # col 6
-    assert {:ok, [name: "value", type: "Int64"], rest} =
-             decode_fields(rest, name: :string, type: :string)
-
-    assert {:ok, rest, _value_rows = [1, 1, 8672, 1, 1, _, 76, 1, 1, 10, 1, _, 8672]} =
-             Choto.Decoder.decode(rest, List.duplicate(:i64, num_rows))
-
-    assert rest == ""
-
-    {:ok, <<1, data::bytes>>} = :gen_tcp.recv(socket, 12)
-    assert data == "\0\x01\0\x02\xFF\xFF\xFF\xFF\0\0\0"
-
-    assert decode_fields(data,
-             unknown: :varint,
-             # block info
-             block_info_field1: :varint,
-             block_info_is_overflow: :u8,
-             block_info_field2: :varint,
-             block_info_bucket_num: :i32,
-             block_info_num3: :varint,
-             # block content
-             num_columns: :varint,
-             num_rows: :varint
-           ) ==
-             {:ok,
               [
-                unknown: 0,
-                block_info_field1: 1,
-                block_info_is_overflow: 0,
-                block_info_field2: 2,
-                block_info_bucket_num: -1,
-                block_info_num3: 0,
-                num_columns: 0,
-                num_rows: 0
-              ], ""}
+                {"host_name", :string},
+                "mac3.local",
+                "mac3.local",
+                "mac3.local",
+                "mac3.local",
+                "mac3.local",
+                "mac3.local",
+                "mac3.local",
+                "mac3.local",
+                "mac3.local",
+                "mac3.local",
+                "mac3.local",
+                "mac3.local",
+                "mac3.local"
+              ],
+              [
+                {"current_time", :datetime},
+                %NaiveDateTime{},
+                %NaiveDateTime{},
+                %NaiveDateTime{},
+                %NaiveDateTime{},
+                %NaiveDateTime{},
+                %NaiveDateTime{},
+                %NaiveDateTime{},
+                %NaiveDateTime{},
+                %NaiveDateTime{},
+                %NaiveDateTime{},
+                %NaiveDateTime{},
+                %NaiveDateTime{},
+                %NaiveDateTime{}
+              ],
+              [{"thread_id", :u64}, _, _, _, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+              [{"type", :u8}, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2],
+              [
+                {"name", :string},
+                "SelectedRows",
+                "SelectedBytes",
+                "MemoryTrackerUsage",
+                "Query",
+                "SelectQuery",
+                "NetworkSendElapsedMicroseconds",
+                "NetworkSendBytes",
+                "SelectedRows",
+                "SelectedBytes",
+                "ContextLock",
+                "RWLockAcquiredReadLocks",
+                "RealTimeMicroseconds",
+                "MemoryTrackerUsage"
+              ],
+              [{"value", :i64}, 1, 1, 8672, 1, 1, _, 76, 1, 1, 10, 1, _, 8672]
+            ]} = Decoder.decode_block(block)
+
+    {:ok, <<1, 0, block::bytes>>} = :gen_tcp.recv(socket, 12)
+    assert block == "\x01\0\x02\xFF\xFF\xFF\xFF\0\0\0"
+    assert {:ok, "", []} = Decoder.decode_block(block)
 
     # 3 = progress
     {:ok, <<3, data::bytes>>} = :gen_tcp.recv(socket, 6)
@@ -493,7 +356,6 @@ defmodule ChotoTest do
   end
 
   def decode_fields(bytes, fields) do
-    alias Choto.Decoder
     types = Enum.map(fields, fn {_key, type} -> type end)
 
     case Decoder.decode(bytes, types) do
