@@ -66,7 +66,7 @@ defmodule Choto do
   # TODO handle errors
   @spec connect(:inet.hostname() | :inet.ip_address(), :inet.port_number(), Keyword.t()) ::
           {:ok, conn}
-  def connect(host, port, opts) do
+  def connect(host, port, opts \\ []) do
     {:ok, socket} = :gen_tcp.connect(host, port, active: false, mode: :binary)
     database = opts[:database] || "default"
     username = opts[:username] || "default"

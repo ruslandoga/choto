@@ -2,10 +2,10 @@ defmodule ChotoTest do
   use ExUnit.Case
 
   test "connect and query" do
-    {:ok, conn} = Choto.connect({127, 0, 0, 1}, 9000, table: "helloworld")
+    {:ok, conn} = Choto.connect({127, 0, 0, 1}, 9000)
 
     assert conn.revision == 54453
-    assert conn.timezone == "Europe/Moscow"
+    assert conn.timezone in ["Europe/Moscow", "UTC"]
 
     # TODO {:ok, conn, req}? if clickhouse supports pipelining
     assert {:ok, conn} = Choto.query(conn, "select 1 + 1")
@@ -34,66 +34,36 @@ defmodule ChotoTest do
               # TODO struct?
               {:progress,
                [_rows1 = 1, _bytes1 = 1, _total_rows1 = 0, _wrote_rows1 = 0, _wrote_bytes1 = 0]},
-              {:profile_events,
-               [
-                 [
-                   {"host_name", :string},
-                   "mac3.local",
-                   "mac3.local",
-                   "mac3.local",
-                   "mac3.local",
-                   "mac3.local",
-                   "mac3.local",
-                   "mac3.local",
-                   "mac3.local",
-                   "mac3.local",
-                   "mac3.local",
-                   "mac3.local",
-                   "mac3.local",
-                   "mac3.local"
-                 ],
-                 [
-                   {"current_time", :datetime},
-                   %NaiveDateTime{},
-                   %NaiveDateTime{},
-                   %NaiveDateTime{},
-                   %NaiveDateTime{},
-                   %NaiveDateTime{},
-                   %NaiveDateTime{},
-                   %NaiveDateTime{},
-                   %NaiveDateTime{},
-                   %NaiveDateTime{},
-                   %NaiveDateTime{},
-                   %NaiveDateTime{},
-                   %NaiveDateTime{},
-                   %NaiveDateTime{}
-                 ],
-                 [{"thread_id", :u64}, _, _, _, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-                 [{"type", :u8}, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2],
-                 [
-                   {"name", :string},
-                   "SelectedRows",
-                   "SelectedBytes",
-                   "MemoryTrackerUsage",
-                   "Query",
-                   "SelectQuery",
-                   "NetworkSendElapsedMicroseconds",
-                   "NetworkSendBytes",
-                   "SelectedRows",
-                   "SelectedBytes",
-                   "ContextLock",
-                   "RWLockAcquiredReadLocks",
-                   "RealTimeMicroseconds",
-                   "MemoryTrackerUsage"
-                 ],
-                 [{"value", :i64}, 1, 1, 8672, 1, 1, _, 76, 1, 1, 10, 1, _, 8672]
-               ]},
+              {:profile_events, events},
               {:data, []},
               {:progress,
                [_rows2 = 0, _bytes2 = 0, _total_rows2 = 0, _wrote_rows2 = 0, _wrote_bytes2 = 0]},
               :end_of_stream
             ]} = Choto.await(conn)
 
+    events = events |> zip() |> load()
+    assert value_for(events, "SelectedRows") == 1
+    assert value_for(events, "SelectedBytes") == 1
+    assert value_for(events, "NetworkSendElapsedMicroseconds") > 1
+    assert value_for(events, "NetworkSendBytes") == 76
+
     assert conn.buffer == ""
+  end
+
+  defp zip(block) do
+    [header | rows] = Enum.zip(block)
+    header = header |> Tuple.to_list() |> Enum.map(fn {name, _type} -> name end)
+    rows = Enum.map(rows, &Tuple.to_list/1)
+    %{columns: header, rows: rows}
+  end
+
+  defp load(%{columns: columns, rows: rows}) do
+    Enum.map(rows, fn row -> columns |> Enum.zip(row) |> Map.new() end)
+  end
+
+  defp value_for(events, name) do
+    events
+    |> Enum.find(fn %{"name" => event_name} -> event_name == name end)
+    |> Map.fetch!("value")
   end
 end
