@@ -22,15 +22,15 @@ defmodule Choto.Messages do
 
   # @min_revision_with_client_info 54032
   # @min_revision_with_server_timezone 54058
-  # @min_revision_with_quota_key_in_client_info 54060
+  @min_revision_with_quota_key_in_client_info 54060
   # @min_revision_with_server_display_name 54372
-  # @min_revision_with_version_patch 54401
+  @min_revision_with_version_patch 54401
   # @min_revision_with_client_write_info 54420
   # @min_revision_with_settings_serialized_as_strings 54429
-  # @min_revision_with_interserver_secret 54441
-  # @min_revision_with_opentelemetry 54442
-  # @min_protocol_version_with_distributed_depth 54448
-  # @min_protocol_version_with_initial_query_start_time 54449
+  @min_revision_with_interserver_secret 54441
+  @min_revision_with_opentelemetry 54442
+  @min_protocol_version_with_distributed_depth 54448
+  @min_protocol_version_with_initial_query_start_time 54449
   # @min_protocol_version_with_incremental_profile_events 54451
   @min_revision_with_parallel_replicas 54453
   @tcp_protocol_version @min_revision_with_parallel_replicas
@@ -41,9 +41,7 @@ defmodule Choto.Messages do
       Encoder.encode(:string, "choto"),
       Encoder.encode(:varint, 1),
       Encoder.encode(:varint, 1),
-      # 54453
-
-      Encoder.encode(:varint, _client_revision = 54456),
+      Encoder.encode(:varint, _client_revision = @tcp_protocol_version),
       Encoder.encode(:string, database_name),
       Encoder.encode(:string, username),
       Encoder.encode(:string, password)
@@ -58,21 +56,30 @@ defmodule Choto.Messages do
   @query_kind_initial_query 1
   # @query_kind_secondary_query 2
 
-  def client_query(query, query_id \\ "") do
+  # unlike `if` only supports bools and returns [] in place of nil
+  defmacrop if_supported(condition, do: block) do
+    quote do
+      case unquote(condition) do
+        true -> unquote(block)
+        false -> []
+      end
+    end
+  end
+
+  def client_query(query, revision, query_id \\ "") do
     [
       Encoder.encode(:varint, @client_query),
       Encoder.encode(:string, query_id),
-      encode_client_info(new_client_info(@query_kind_initial_query)),
+      encode_client_info(new_client_info(@query_kind_initial_query), revision),
+      # TODO
       _settings = [],
-      # empty string is a marker of the end of settin
+      # empty string is a marker of the end of settings
       Encoder.encode(:string, ""),
-      # if revision > @min_revision_with_interserver_secret do
-      Encoder.encode(:string, ""),
-      # else
-      # []
-      # end,
-      # 2 is query processing state complete
-      Encoder.encode(:varint, 2),
+      if_supported revision >= @min_revision_with_interserver_secret do
+        Encoder.encode(:string, "")
+      end,
+      Encoder.encode(:varint, _state_complete = 2),
+      # TODO we have nimble_lz4, so can enable compression, compare performance
       Encoder.encode(:boolean, _compression = false),
       Encoder.encode(:string, query)
     ]
@@ -98,15 +105,15 @@ defmodule Choto.Messages do
     }
   end
 
-  def encode_client_info(info) do
+  def encode_client_info(info, revision) do
     [
       Encoder.encode(:u8, info.query_kind),
       Encoder.encode(:string, info.initial_user),
       Encoder.encode(:string, info.initial_query_id),
       Encoder.encode(:string, info.initial_address),
-      # TODO revision >= @min_protocol_version_with_initial_query_start_time
-      # initial_query_start_time_microseconds
-      Encoder.encode(:u64, 0),
+      if_supported revision >= @min_protocol_version_with_initial_query_start_time do
+        Encoder.encode(:u64, _initial_query_start_time_microseconds = 0)
+      end,
       Encoder.encode(:u8, info.interface),
       Encoder.encode(:string, info.os_user),
       Encoder.encode(:string, info.client_hostname),
@@ -114,21 +121,25 @@ defmodule Choto.Messages do
       Encoder.encode(:varint, info.version_major),
       Encoder.encode(:varint, info.version_minor),
       Encoder.encode(:varint, info.revision),
-      # revision >= DBMS_MIN_REVISION_WITH_QUOTA_KEY_IN_CLIENT_INFO
-      Encoder.encode(:string, info.quota_key),
-      # revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_DISTRIBUTED_DEPTH
-      Encoder.encode(:varint, 0),
-      # revision >= DBMS_MIN_REVISION_WITH_VERSION_PATCH
-      Encoder.encode(:varint, info.patch),
-      # revision >= DBMS_MIN_REVISION_WITH_OPENTELEMETRY
-      Encoder.encode(:u8, 0),
-      # revision >= DBMS_MIN_REVISION_WITH_PARALLEL_REPLICAS
-      # collaborate_with_initiator
-      Encoder.encode(:varint, 0),
-      # count_participating_replicas
-      Encoder.encode(:varint, 0),
-      # number_of_current_replica
-      Encoder.encode(:varint, 0)
+      if_supported revision >= @min_revision_with_quota_key_in_client_info do
+        Encoder.encode(:string, info.quota_key)
+      end,
+      if_supported revision >= @min_protocol_version_with_distributed_depth do
+        Encoder.encode(:varint, 0)
+      end,
+      if_supported revision >= @min_revision_with_version_patch do
+        Encoder.encode(:varint, info.patch)
+      end,
+      if_supported revision >= @min_revision_with_opentelemetry do
+        Encoder.encode(:u8, 0)
+      end,
+      if_supported revision >= @min_revision_with_parallel_replicas do
+        [
+          Encoder.encode(:varint, _collaborate_with_initiator = 0),
+          Encoder.encode(:varint, _count_participating_replicas = 0),
+          Encoder.encode(:varint, _number_of_current_replica = 0)
+        ]
+      end
     ]
   end
 end

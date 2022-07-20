@@ -89,8 +89,8 @@ defmodule ChotoTest do
              "\x01",
              # version minor
              "\x01",
-             # revision = 54456
-             "\xB8\xA9\x03",
+             # revision = 54453
+             "\xB5\xA9\x03",
              # database
              ["\n" | "helloworld"],
              # username
@@ -100,7 +100,7 @@ defmodule ChotoTest do
            ]
 
     assert IO.iodata_to_binary(client_hello) ==
-             "\0\x05choto\x01\x01\xB8\xA9\x03\nhelloworld\adefault\0"
+             "\0\x05choto\x01\x01\xB5\xA9\x03\nhelloworld\adefault\0"
 
     :ok = :gen_tcp.send(socket, client_hello)
     # 0 = server hello
@@ -128,7 +128,10 @@ defmodule ChotoTest do
                 version_patch: 1
               ], <<>>}
 
-    client_query = Choto.Messages.client_query("select 1 + 1")
+    # TODO negotiate revision with server, revision = min(server, client)
+    revision = min(_client = 54453, _server = 54456)
+
+    client_query = Choto.Messages.client_query("select 1 + 1", revision)
 
     assert client_query == [
              <<1>>,
@@ -150,9 +153,7 @@ defmodule ChotoTest do
                <<0>>,
                <<3>>,
                <<0>>,
-               <<0>>,
-               <<0>>,
-               <<0>>
+               [<<0>>, <<0>>, <<0>>]
              ],
              [],
              [<<0>> | ""],
@@ -177,11 +178,11 @@ defmodule ChotoTest do
     _rest_after = "\x01\0"
     _some_type = "\nplus(1, 1)"
 
-    assert data == "\0\x01\0\x02\xFF\xFF\xFF\xFF\0\x01\0\nplus(1, 1)\x06UInt16\0"
+    assert data == "\0\x01\0\x02\xFF\xFF\xFF\xFF\0\x01\0\nplus(1, 1)\x06UInt16"
 
     # should I subtract the prev message from this one to get the data?
     {:ok, <<1, data::bytes>>} = :gen_tcp.recv(socket, byte_size(data) + 3)
-    assert data == "\0\x01\0\x02\xFF\xFF\xFF\xFF\0\x01\x01\nplus(1, 1)\x06UInt16\0\x02\0"
+    assert data == "\0\x01\0\x02\xFF\xFF\xFF\xFF\0\x01\x01\nplus(1, 1)\x06UInt16\x02\0"
 
     # 6 = profile info
     {:ok, <<6, data::bytes>>} = :gen_tcp.recv(socket, 8)
@@ -192,7 +193,7 @@ defmodule ChotoTest do
     assert data == "\x01\x01\0\0\0"
 
     # 15 = profile events
-    {:ok, <<14, _data::bytes>>} = :gen_tcp.recv(socket, 770)
+    {:ok, <<14, _data::bytes>>} = :gen_tcp.recv(socket, 764)
 
     # assert data ==
     #          "\0\x01\0\x02\xFF\xFF\xFF\xFF\0\x06\r\thost_name\x06String\0\nmac3.local\nmac3.local\nmac3.local\nmac3.local\nmac3.local\nmac3.local\nmac3.local\nmac3.local\nmac3.local\nmac3.local\nmac3.local\nmac3.local\nmac3.local\fcurrent_time\bDateTime\0\x16\x8A\xD4b\x16\x8A\xD4b\x16\x8A\xD4b\x16\x8A\xD4b\x16\x8A\xD4b\x16\x8A\xD4b\x16\x8A\xD4b\x16\x8A\xD4b\x16\x8A\xD4b\x16\x8A\xD4b\x16\x8A\xD4b\x16\x8A\xD4b\x16\x8A\xD4b\tthread_id\x06UInt64\0۽V\0\0\0\0\0۽V\0\0\0\0\0۽V\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x04type#Enum8('increment' = 1, 'gauge' = 2)\0\x01\x01\x02\x01\x01\x01\x01\x01\x01\x01\x01\x01\x02\x04name\x06String\0\fSelectedRows\rSelectedBytes\x12MemoryTrackerUsage\x05Query\vSelectQuery\x1ENetworkSendElapsedMicroseconds\x10NetworkSendBytes\fSelectedRows\rSelectedBytes\vContextLock\x17RWLockAcquiredReadLocks\x14RealTimeMicroseconds\x12MemoryTrackerUsage\x05value\x05Int64\0\x01\0\0\0\0\0\0\0\x01\0\0\0\0\0\0\0\xE0!\0\0\0\0\0\0\x01\0\0\0\0\0\0\0\x01\0\0\0\0\0\0\0>\0\0\0\0\0\0\0N\0\0\0\0\0\0\0\x01\0\0\0\0\0\0\0\x01\0\0\0\0\0\0\0\n\0\0\0\0\0\0\0\x01\0\0\0\0\0\0\0\x1C\x01\0\0\0\0\0\0\xE0!\0\0\0\0\0\0"
