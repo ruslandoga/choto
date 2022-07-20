@@ -181,6 +181,13 @@ defmodule ChotoTest do
     assert data == "\0\x01\0\x02\xFF\xFF\xFF\xFF\0\x01\0\nplus(1, 1)\x06UInt16"
 
     # should I subtract the prev message from this one to get the data?
+    # no?
+
+    # https://github.com/ClickHouse/ClickHouse/blob/7722b647b75ff67c805b9d2f12208afae1056252/src/Core/Protocol.h#L51-L54
+    # /// If a query returns data, the server sends an empty header block containing
+    # /// the description of resulting columns before executing the query.
+    # /// Using this block the client can initialize the output formatter and display the prefix of resulting table
+    # /// beforehand.
     {:ok, <<1, data::bytes>>} = :gen_tcp.recv(socket, byte_size(data) + 3)
     assert data == "\0\x01\0\x02\xFF\xFF\xFF\xFF\0\x01\x01\nplus(1, 1)\x06UInt16\x02\0"
 
