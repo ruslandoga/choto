@@ -7,6 +7,37 @@ defmodule Choto.Decoder do
     _decode(bytes, types, _acc = [])
   end
 
+  # TODO handle incomplete blocks
+  def decode_block(<<1, 0, 2, -1::32-little-signed, 0, cols, rows, rest::bytes>>) do
+    _decode_block(rest, cols, rows, [])
+  end
+
+  # first I'll go back to unoptimised approach with excessive binary copying
+  # then I'll use pivot with stack
+  # then after benching will decide if something else is needed like varint macros
+
+  defp _decode_block(bytes, cols, rows, acc) when cols > 0 do
+    {:ok, bytes, [name, type]} = decode(bytes, [:string, :string])
+
+    type =
+      case type do
+        "UInt16" -> :u16
+        "UInt64" -> :u64
+        "Int64" -> :i64
+        # TODO parse enums
+        "Enum8" <> _rest -> :u8
+        "String" -> :string
+        "DateTime" -> :datetime
+      end
+
+    {:ok, bytes, values} = decode(bytes, List.duplicate(type, rows))
+    _decode_block(bytes, cols - 1, rows, [[{name, type} | values] | acc])
+  end
+
+  defp _decode_block(bytes, 0, _rows, acc) do
+    {:ok, bytes, :lists.reverse(acc)}
+  end
+
   defp _decode(<<1, rest::bytes>>, [:boolean | types], acc) do
     _decode(rest, types, [true | acc])
   end
