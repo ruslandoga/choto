@@ -1,4 +1,4 @@
-### TODO
+### Choto
 
 Native [ClickHouse](https://github.com/ClickHouse/ClickHouse) protocol + client, API modelled after [`:mint.`](https://github.com/elixir-mint/mint)
 
