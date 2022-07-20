@@ -17,7 +17,7 @@ defmodule Choto.Messages do
   @client_query 1
 
   # A block of data (compressed or not).
-  # @client_data 2
+  @client_data 2
 
   # Cancel the query execution.
   # @client_cancel 3
@@ -161,6 +161,37 @@ defmodule Choto.Messages do
       # TODO we have nimble_lz4, so can enable compression, compare performance
       Encoder.encode(:boolean, _compression = false),
       Encoder.encode(:string, query)
+    ]
+  end
+
+  def client_data do
+    [
+      Encoder.encode(:varint, @client_data),
+      # TODO what is it?
+      0,
+      encode_block()
+    ]
+  end
+
+  def encode_block do
+    [
+      encode_block_info(),
+      _num_columns = 0,
+      _num_rows = 0
+    ]
+  end
+
+  # https://github.com/vahid-sohrabloo/chconn/blob/68e4cebc13c147da2ccec37dec433761ae041ebb/block.go#L168
+  # and https://github.com/ClickHouse/clickhouse-go/blob/5c3b7a7c44f03422165d319d330d05272d4ebc33/lib/proto/block.go#L170
+  def encode_block_info do
+    [
+      Encoder.encode(:varint, 1),
+      # TODO
+      Encoder.encode(:u8, _is_overflow = 0),
+      Encoder.encode(:varint, 2),
+      # TODO
+      Encoder.encode(:i32, _bucket_num = -1),
+      Encoder.encode(:varint, 0)
     ]
   end
 
