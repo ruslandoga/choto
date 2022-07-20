@@ -441,9 +441,50 @@ defmodule ChotoTest do
     {:ok, <<1, data::bytes>>} = :gen_tcp.recv(socket, 12)
     assert data == "\0\x01\0\x02\xFF\xFF\xFF\xFF\0\0\0"
 
+    assert decode_fields(data,
+             unknown: :varint,
+             # block info
+             block_info_field1: :varint,
+             block_info_is_overflow: :u8,
+             block_info_field2: :varint,
+             block_info_bucket_num: :i32,
+             block_info_num3: :varint,
+             # block content
+             num_columns: :varint,
+             num_rows: :varint
+           ) ==
+             {:ok,
+              [
+                unknown: 0,
+                block_info_field1: 1,
+                block_info_is_overflow: 0,
+                block_info_field2: 2,
+                block_info_bucket_num: -1,
+                block_info_num3: 0,
+                num_columns: 0,
+                num_rows: 0
+              ], ""}
+
     # 3 = progress
     {:ok, <<3, data::bytes>>} = :gen_tcp.recv(socket, 6)
     assert data == "\0\0\0\0\0"
+
+    assert decode_fields(data,
+             rows: :varint,
+             bytes: :varint,
+             total_rows: :varint,
+             # if revision > DBMS_MIN_REVISION_WITH_CLIENT_WRITE_INFO
+             wrote_rows: :varint,
+             wrote_bytes: :varint
+           ) ==
+             {:ok,
+              [
+                rows: 0,
+                bytes: 0,
+                total_rows: 0,
+                wrote_rows: 0,
+                wrote_bytes: 0
+              ], ""}
 
     # 5 = end of stream
     {:ok, <<5>>} = :gen_tcp.recv(socket, 0)
