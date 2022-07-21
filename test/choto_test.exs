@@ -1,7 +1,7 @@
 defmodule ChotoTest do
   use ExUnit.Case
 
-  test "connect and query" do
+  test "connect and query and ping" do
     {:ok, conn} = Choto.connect({127, 0, 0, 1}, 9000)
 
     assert conn.revision == 54453
@@ -11,7 +11,7 @@ defmodule ChotoTest do
     assert {:ok, conn} = Choto.query(conn, "select 1 + 1")
 
     # TODO Choto.stream ?
-    assert {conn,
+    assert {:ok,
             [
               # From: https://github.com/ClickHouse/ClickHouse/blob/7722b647b75ff67c805b9d2f12208afae1056252/src/Core/Protocol.h#L51-L54:
               # If a query returns data, the server sends an empty header block containing
@@ -39,13 +39,18 @@ defmodule ChotoTest do
               {:progress,
                [_rows2 = 0, _bytes2 = 0, _total_rows2 = 0, _wrote_rows2 = 0, _wrote_bytes2 = 0]},
               :end_of_stream
-            ]} = Choto.await(conn)
+            ], conn} = Choto.await(conn)
 
     events = events |> zip() |> load()
     assert value_for(events, "SelectedRows") == 1
     assert value_for(events, "SelectedBytes") == 1
     assert value_for(events, "NetworkSendElapsedMicroseconds") > 1
     assert value_for(events, "NetworkSendBytes") == 76
+
+    assert conn.buffer == ""
+
+    assert {:ok, conn} = Choto.ping(conn)
+    assert {:ok, :pong, conn} = Choto.recv(conn)
 
     assert conn.buffer == ""
   end

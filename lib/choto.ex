@@ -19,7 +19,7 @@ defmodule Choto do
   @server_progress 3
 
   # Ping response
-  # @server_pong 4
+  @server_pong 4
 
   # All packets were transmitted
   @server_end_of_stream 5
@@ -97,19 +97,56 @@ defmodule Choto do
     {:ok, conn}
   end
 
+  @spec ping(conn) :: {:ok, conn}
+  def ping(conn) do
+    %{socket: socket} = conn
+    :ok = :gen_tcp.send(socket, Messages.client_ping())
+    {:ok, conn}
+  end
+
   # TODO
   @type server_packet :: term
 
+  @doc "Receives a single server packet. Useful for pings and other similar packets."
+  @spec recv(conn) :: {:ok, server_packet, conn}
+  def recv(conn) do
+    %{socket: socket, revision: _revision, buffer: buffer} = conn
+    {:ok, data} = :gen_tcp.recv(socket, 0)
+
+    case decode(buffer <> data) do
+      {:ok, buffer, packet} -> {:ok, packet, %{conn | buffer: buffer}}
+      {:more, buffer} -> recv(%{conn | buffer: buffer})
+    end
+  end
+
   # TODO handle errors
-  @spec await(conn) :: {conn, [server_packet]}
+  # TODO receive_all?
+  @doc "Receives all packets until end of stream or exception. Useful for queries."
+  @spec await(conn) :: {:ok, [server_packet], conn}
   def await(conn, acc \\ []) do
     # TODO use revision in decode
     %{socket: socket, revision: _revision, buffer: buffer} = conn
     {:ok, data} = :gen_tcp.recv(socket, 0)
 
-    case decode(buffer <> data, acc) do
-      {:cont, buffer, acc} -> await(%{conn | buffer: buffer}, acc)
-      {:done, buffer, acc} -> {%{conn | buffer: buffer}, acc}
+    case decode_all(buffer <> data, acc) do
+      {:more, buffer, acc} -> await(%{conn | buffer: buffer}, acc)
+      {:done, buffer, acc} -> {:ok, acc, %{conn | buffer: buffer}}
+    end
+  end
+
+  defp decode_all(bytes, acc) do
+    case decode(bytes) do
+      {:ok, bytes, {:exception, _exception} = exception} ->
+        {:done, bytes, :lists.reverse([exception | acc])}
+
+      {:ok, bytes, :end_of_stream = eos} ->
+        {:done, bytes, :lists.reverse([eos | acc])}
+
+      {:ok, bytes, packet} ->
+        decode_all(bytes, [packet | acc])
+
+      {:more, bytes} ->
+        {:more, bytes, acc}
     end
   end
 
@@ -123,12 +160,12 @@ defmodule Choto do
 
   @doc false
   # TODO what is this 0?
-  def decode(<<@server_data, 0, rest::bytes>>, acc) do
+  def decode(<<@server_data, 0, rest::bytes>>) do
     {:ok, rest, block} = Decoder.decode_block(rest)
-    decode(rest, [{:data, block} | acc])
+    {:ok, rest, {:data, block}}
   end
 
-  def decode(<<@server_profile_info, rest::bytes>>, acc) do
+  def decode(<<@server_profile_info, rest::bytes>>) do
     {:ok, rest, profile_info} =
       Decoder.decode(rest, [
         _rows = :varint,
@@ -139,10 +176,10 @@ defmodule Choto do
         _calculated_rows_before_limit = :boolean
       ])
 
-    decode(rest, [{:profile_info, profile_info} | acc])
+    {:ok, rest, {:profile_info, profile_info}}
   end
 
-  def decode(<<@server_progress, rest::bytes>>, acc) do
+  def decode(<<@server_progress, rest::bytes>>) do
     {:ok, rest, progress} =
       Decoder.decode(
         rest,
@@ -156,19 +193,23 @@ defmodule Choto do
         ]
       )
 
-    decode(rest, [{:progress, progress} | acc])
+    {:ok, rest, {:progress, progress}}
   end
 
-  def decode(<<@server_profile_events, 0, rest::bytes>>, acc) do
+  def decode(<<@server_pong, rest::bytes>>) do
+    {:ok, rest, :pong}
+  end
+
+  def decode(<<@server_profile_events, 0, rest::bytes>>) do
     {:ok, rest, profile_events} = Decoder.decode_block(rest)
-    decode(rest, [{:profile_events, profile_events} | acc])
+    {:ok, rest, {:profile_events, profile_events}}
   end
 
-  def decode(<<@server_end_of_stream, rest::bytes>>, acc) do
-    {:done, rest, :lists.reverse([:end_of_stream | acc])}
+  def decode(<<@server_end_of_stream, rest::bytes>>) do
+    {:ok, rest, :end_of_stream}
   end
 
-  def decode(<<@server_exception, rest::bytes>>, acc) do
+  def decode(<<@server_exception, rest::bytes>>) do
     {:ok, rest, exception} =
       Decoder.decode(rest, [
         _code = :i32,
@@ -178,10 +219,10 @@ defmodule Choto do
         _has_nested = :boolean
       ])
 
-    {:done, rest, :lists.reverse([{:exception, exception} | acc])}
+    {:ok, rest, {:exception, exception}}
   end
 
-  def decode(bytes, acc) do
-    {:cont, bytes, acc}
+  def decode(bytes) do
+    {:more, bytes}
   end
 end
