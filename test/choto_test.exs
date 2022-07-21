@@ -13,39 +13,60 @@ defmodule ChotoTest do
     # TODO Choto.stream ?
     assert {:ok,
             [
-              # From: https://github.com/ClickHouse/ClickHouse/blob/7722b647b75ff67c805b9d2f12208afae1056252/src/Core/Protocol.h#L51-L54:
-              # If a query returns data, the server sends an empty header block containing
-              # the description of resulting columns before executing the query.
-              # Using this block the client can initialize the output formatter and display the prefix of resulting table
-              # beforehand.
-              {:data, [[{"plus(1, 1)", :u16}]]},
-              # TODO split columns from rows? %{columns: ["plus(1, 1)"], values: [[2]]}
-              {:data, [[{"plus(1, 1)", :u16}, 2]]},
-              # TODO struct?
-              {:profile_info,
-               [
-                 _rows0 = 1,
-                 _blocks0 = 1,
-                 _bytes0 = 4104,
-                 _applied_limit0 = false,
-                 _rows_before_limit0 = 0,
-                 _calculated_rows_before_limit0 = true
-               ]},
-              # TODO struct?
-              {:progress,
-               [_rows1 = 1, _bytes1 = 1, _total_rows1 = 0, _wrote_rows1 = 0, _wrote_bytes1 = 0]},
-              {:profile_events, events},
-              {:data, []},
-              {:progress,
-               [_rows2 = 0, _bytes2 = 0, _total_rows2 = 0, _wrote_rows2 = 0, _wrote_bytes2 = 0]},
+              {:data, data1},
+              {:data, data2},
+              {:profile_info, profile_info1},
+              {:progress, progress1},
+              {:profile_events, profile_events},
+              {:data, _data3 = []},
+              {:progress, progress2},
               :end_of_stream
             ], conn} = Choto.await(conn)
 
-    events = events |> zip() |> load()
-    assert value_for(events, "SelectedRows") == 1
-    assert value_for(events, "SelectedBytes") == 1
-    assert value_for(events, "NetworkSendElapsedMicroseconds") > 1
-    assert value_for(events, "NetworkSendBytes") == 76
+    # From: https://github.com/ClickHouse/ClickHouse/blob/7722b647b75ff67c805b9d2f12208afae1056252/src/Core/Protocol.h#L51-L54:
+
+    # If a query returns data, the server sends an empty header block containing
+    # the description of resulting columns before executing the query.
+    # Using this block the client can initialize the output formatter and display the prefix of resulting table
+    # beforehand.
+
+    assert data1 == [[{"plus(1, 1)", :u16}]]
+
+    # TODO split columns from rows? %{columns: ["plus(1, 1)"], values: [[2]]}
+    assert data2 == [[{"plus(1, 1)", :u16}, 2]]
+
+    # TODO struct?
+    assert profile_info1 == [
+             _rows = 1,
+             _blocks = 1,
+             _bytes = 4104,
+             _applied_limit = false,
+             _rows_before_limit = 0,
+             _calculated_rows_before_limit = true
+           ]
+
+    # TODO struct?
+    assert progress1 == [
+             _rows = 1,
+             _bytes = 1,
+             _total_rows = 0,
+             _wrote_rows = 0,
+             _wrote_bytes = 0
+           ]
+
+    profile_events = profile_events |> zip() |> load()
+    assert value_for(profile_events, "SelectedRows") == 1
+    assert value_for(profile_events, "SelectedBytes") == 1
+    assert value_for(profile_events, "NetworkSendElapsedMicroseconds") > 1
+    assert value_for(profile_events, "NetworkSendBytes") == 76
+
+    assert progress2 == [
+             _rows = 0,
+             _bytes = 0,
+             _total_rows = 0,
+             _wrote_rows = 0,
+             _wrote_bytes = 0
+           ]
 
     assert conn.buffer == ""
 
