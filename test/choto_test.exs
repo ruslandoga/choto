@@ -8,7 +8,7 @@ defmodule ChotoTest do
     assert conn.timezone in ["Europe/Moscow", "UTC"]
 
     # TODO {:ok, conn, req}? if clickhouse supports pipelining
-    assert {:ok, conn} = Choto.query(conn, "select 1 + 1")
+    assert :ok = Choto.query(conn, "select 1 + 1")
 
     # TODO Choto.stream ?
     assert {:ok,
@@ -70,7 +70,7 @@ defmodule ChotoTest do
 
     assert conn.buffer == ""
 
-    assert {:ok, conn} = Choto.ping(conn)
+    assert :ok = Choto.ping(conn)
     assert {:ok, :pong, conn} = Choto.recv(conn)
 
     assert conn.buffer == ""
@@ -91,5 +91,111 @@ defmodule ChotoTest do
     events
     |> Enum.find(fn %{"name" => event_name} -> event_name == name end)
     |> Map.fetch!("value")
+  end
+
+  test "create table and insert data" do
+    {:ok, conn} = Choto.connect({127, 0, 0, 1}, 9000)
+    # :ok = Choto.query(conn, "drop table my_first_table")
+    # assert {:ok, [_], conn} = Choto.await(conn)
+
+    ddl = """
+    create table my_first_table (
+      user_id UInt32,
+      message String,
+      timestamp Datetime,
+      metric Float32
+    ) engine = MergeTree() primary key (user_id, timestamp)
+    """
+
+    assert :ok = Choto.query(conn, ddl)
+    assert {:ok, [:end_of_stream], conn} = Choto.await(conn)
+
+    on_exit(fn ->
+      {:ok, conn} = Choto.connect({127, 0, 0, 1}, 9000)
+      :ok = Choto.query(conn, "drop table my_first_table")
+      {:ok, [:end_of_stream], _conn} = Choto.await(conn)
+    end)
+
+    assert :ok = Choto.query(conn, "select * from my_first_table")
+    assert {:ok, packets, conn} = Choto.await(conn)
+
+    assert Enum.filter(packets, fn packet -> match?({:data, _}, packet) end) ==
+             [
+               {:data,
+                [
+                  [{"user_id", :u32}],
+                  [{"message", :string}],
+                  [{"timestamp", :datetime}],
+                  [{"metric", :f32}]
+                ]},
+               {:data, []}
+             ]
+
+    assert conn.buffer == ""
+
+    :ok =
+      Choto.query(conn, "INSERT INTO my_first_table (user_id, message, timestamp, metric) VALUES")
+
+    today_date = Date.utc_today()
+    yesterday_date = Date.add(today_date, -1)
+    today = NaiveDateTime.new!(today_date, ~T[00:00:00])
+    yesterday = NaiveDateTime.new!(yesterday_date, ~T[00:00:00])
+    now = ~N[2022-07-21 14:24:37.799021]
+
+    user_ids = [101, 102, 102, 101]
+
+    messages = [
+      "Hello, ClickHouse!",
+      "Insert a lot of rows per batch",
+      "Sort your data based on your commonly-used queries",
+      "Granules are the smallest chunks of data read"
+    ]
+
+    timestamps = [now, yesterday, today, now]
+    metrics = [-1.0, 1.41421, 2.718, 3.14159]
+
+    :ok =
+      Choto.send_data(conn, [
+        ["user_id", :u32 | user_ids],
+        ["message", :string | messages],
+        ["timestamp", :datetime | timestamps],
+        ["metric", :f32 | metrics]
+      ])
+
+    assert {:ok,
+            [
+              {:table_columns, table_columns},
+              {:data, data},
+              :end_of_stream
+            ], conn} = Choto.await(conn)
+
+    assert table_columns == [
+             "columns format version: 1\n4 columns:\n`user_id` UInt32\n`message` String\n`timestamp` DateTime\n`metric` Float32\n"
+           ]
+
+    assert data == [
+             [{"user_id", :u32}],
+             [{"message", :string}],
+             [{"timestamp", :datetime}],
+             [{"metric", :f32}]
+           ]
+
+    assert conn.buffer == ""
+
+    # TODO
+    # assert :ok = Choto.query(conn, "select * from my_first_table")
+    # assert {:ok, packets, conn} = Choto.await(conn)
+
+    # assert Enum.filter(packets, fn packet -> match?({:data, _}, packet) end) ==
+    #          [
+    #            {:data,
+    #             [
+    #               [{"user_id", :u32}],
+    #               [{"message", :string}],
+    #               [{"timestamp", :datetime}],
+    #               [{"metric", :f32}]
+    #             ]},
+    #            {:data, []}
+    #          ]
   end
 end

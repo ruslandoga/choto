@@ -112,21 +112,68 @@ defmodule Choto.Messages do
     ]
   end
 
-  def client_data do
+  def client_data(data) do
     [
       Encoder.encode(:varint, @client_data),
       # TODO what is it?
       0,
-      encode_block()
+      encode_block(data)
     ]
   end
 
-  def encode_block do
+  def encode_block(data) do
+    num_columns = length(data)
+
+    # TODO
+    if num_columns > 0 do
+      num_rows = length(hd(data)) - 2
+
+      [
+        encode_block_info(),
+        num_columns,
+        num_rows,
+        for [name, type | values] <- data do
+          encode_column(name, type, values)
+        end
+      ]
+    else
+      [
+        encode_block_info(),
+        _num_columns = 0,
+        _num_rows = 0
+      ]
+    end
+  end
+
+  def encode_column(name, type, values) do
     [
-      encode_block_info(),
-      _num_columns = 0,
-      _num_rows = 0
+      Encoder.encode(:string, name),
+      Encoder.encode(:string, encode_type(type)),
+      # 0,
+      for value <- values do
+        Encoder.encode(type, value)
+      end
     ]
+  end
+
+  types = %{
+    "UInt8" => :u8,
+    "UInt16" => :u16,
+    "UInt32" => :u32,
+    "UInt64" => :u64,
+    "Int8" => :i8,
+    "Int16" => :i16,
+    "Int32" => :i32,
+    "Int64" => :i64,
+    "Float32" => :f32,
+    "Float64" => :f64,
+    "String" => :string,
+    "Date" => :date,
+    "DateTime" => :datetime
+  }
+
+  for {encoded, type} <- types do
+    def encode_type(unquote(type)), do: unquote(encoded)
   end
 
   # https://github.com/vahid-sohrabloo/chconn/blob/68e4cebc13c147da2ccec37dec433761ae041ebb/block.go#L168
