@@ -1,19 +1,13 @@
 ### Choto
 
-Native [ClickHouse](https://github.com/ClickHouse/ClickHouse) protocol + client, API modelled after [`:mint.`](https://github.com/elixir-mint/mint)
+Native [ClickHouse](https://github.com/ClickHouse/ClickHouse) protocol + client, API (to be) modelled after [`:mint.`](https://github.com/elixir-mint/mint)
 
 ```elixir
-{:ok, conn} = Choto.connect(hostname, port, _options = [])
-{:ok, conn, ref} = Choto.query(conn, "select 1 + 1")
+iex> {:ok, conn} = Choto.connect(_hostname = {127, 0, 0, 1}, _port = 9000, _options = [])
+iex> {:ok, conn} = Choto.query(conn, "select 1 + 1")
 
-receive do
-  message -> Choto.stream(conn, message)
-  # {:server_data, _block = [{_column_name, _column_type} | values]} | _rest]}
-  # {:server_profile_info, ...}
-  # {:server_progress, _rows, _bytes, _total_rows, _wrote_rows, _wrote_bytes}
-  # {:server_profile_events, _block = [...]}
-  # :server_end_of_stream
-end
+# See tests for more
+iex> {:ok, _decoded_packets, conn} = Choto.await(conn)
 ```
 
 [`:choto_dbconnection`]()
