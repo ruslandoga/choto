@@ -10,18 +10,30 @@ defmodule Choto.Encoder do
     [encode(:varint, byte_size(str)) | str]
   end
 
-  # TODO is it always little endian , even if machine is big endian? should it be native endian?
-
-  def encode(:u8, i), do: <<i::little-unsigned>>
-  def encode(:u16, i), do: <<i::16-little-unsigned>>
-  def encode(:u32, i), do: <<i::32-little-unsigned>>
-  def encode(:u64, i), do: <<i::64-little-unsigned>>
+  def encode(:u8, i), do: <<i::little>>
+  def encode(:u16, i), do: <<i::16-little>>
+  def encode(:u32, i), do: <<i::32-little>>
+  def encode(:u64, i), do: <<i::64-little>>
 
   def encode(:i8, i), do: <<i::little-signed>>
   def encode(:i16, i), do: <<i::16-little-signed>>
   def encode(:i32, i), do: <<i::32-little-signed>>
   def encode(:i64, i), do: <<i::64-little-signed>>
 
+  def encode(:f64, f), do: <<f::64-little-signed-float>>
+  def encode(:f32, f), do: <<f::32-little-signed-float>>
+
   def encode(:boolean, true), do: encode(:u8, 1)
   def encode(:boolean, false), do: encode(:u8, 0)
+
+  @epoch_date ~D[1970-01-01]
+  @epoch_naive_datetime NaiveDateTime.new!(@epoch_date, ~T[00:00:00])
+
+  def encode(:datetime, %NaiveDateTime{} = datetime) do
+    <<NaiveDateTime.diff(datetime, @epoch_naive_datetime)::32-little>>
+  end
+
+  def encode(:date, %Date{} = date) do
+    <<Date.diff(date, @epoch_date)::16-little>>
+  end
 end

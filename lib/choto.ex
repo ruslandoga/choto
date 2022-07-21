@@ -40,7 +40,7 @@ defmodule Choto do
   # @server_log 10
 
   # Columns' description for default values calculation
-  # @server_table_columns 11
+  @server_table_columns 11
 
   # List of unique parts ids.
   # @server_part_uuids 12
@@ -89,19 +89,33 @@ defmodule Choto do
   end
 
   # TODO await resp? record query id for Choto.stream?
-  @spec query(conn, String.t()) :: {:ok, conn}
+  @spec query(conn, String.t()) :: :ok
   def query(conn, query) do
     %{socket: socket, revision: revision} = conn
-    :ok = :gen_tcp.send(socket, Messages.client_query(query, revision))
-    :ok = :gen_tcp.send(socket, Messages.client_data())
-    {:ok, conn}
+
+    :ok =
+      :gen_tcp.send(socket, [
+        Messages.client_query(query, revision),
+        Messages.client_data([])
+      ])
   end
 
-  @spec ping(conn) :: {:ok, conn}
+  @spec send_data(conn, [[term]]) :: :ok
+  def send_data(conn, data) do
+    %{socket: socket, revision: _revision} = conn
+
+    :ok =
+      :gen_tcp.send(socket, [
+        # TODO pass revision, a recent version uses 0 between column type and values
+        Messages.client_data(data),
+        Messages.client_data([])
+      ])
+  end
+
+  @spec ping(conn) :: :ok
   def ping(conn) do
     %{socket: socket} = conn
     :ok = :gen_tcp.send(socket, Messages.client_ping())
-    {:ok, conn}
   end
 
   # TODO
@@ -159,7 +173,7 @@ defmodule Choto do
   # not just {:ok, rest, decoded} = ...
 
   @doc false
-  # TODO what is this 0?
+  # TODO what is this 0? name? then better decode it properly
   def decode(<<@server_data, 0, rest::bytes>>) do
     {:ok, rest, block} = Decoder.decode_block(rest)
     {:ok, rest, {:data, block}}
@@ -222,7 +236,14 @@ defmodule Choto do
     {:ok, rest, {:exception, exception}}
   end
 
-  def decode(bytes) do
-    {:more, bytes}
+  # TODO 0 again?
+  def decode(<<@server_table_columns, 0, rest::bytes>>) do
+    {:ok, rest, columns} = Decoder.decode(rest, [:string])
+    {:ok, rest, {:table_columns, columns}}
+  end
+
+  # TODO
+  def decode("") do
+    {:more, ""}
   end
 end

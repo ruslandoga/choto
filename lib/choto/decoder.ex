@@ -21,12 +21,21 @@ defmodule Choto.Decoder do
 
     type =
       case type do
+        "UInt8" -> :u8
         "UInt16" -> :u16
+        "UInt32" -> :u32
         "UInt64" -> :u64
+        "Int8" -> :i8
+        "Int16" -> :i16
+        "Int32" -> :i32
         "Int64" -> :i64
+        "Float32" -> :f32
+        "Float64" -> :f64
         # TODO parse enums
         "Enum8" <> _rest -> :u8
+        "Enum16" <> _rest -> :u8
         "String" -> :string
+        "Date" -> :date
         "DateTime" -> :datetime
       end
 
@@ -78,31 +87,31 @@ defmodule Choto.Decoder do
     _decode(rest, types, [value | acc])
   end
 
-  defp _decode(<<value::64-little-unsigned, rest::bytes>>, [:u64 | types], acc) do
+  defp _decode(<<value::64-little, rest::bytes>>, [:u64 | types], acc) do
     _decode(rest, types, [value | acc])
   end
 
-  defp _decode(<<value::32-little-unsigned, rest::bytes>>, [:u32 | types], acc) do
+  defp _decode(<<value::32-little, rest::bytes>>, [:u32 | types], acc) do
     _decode(rest, types, [value | acc])
   end
 
-  defp _decode(<<value::16-little-unsigned, rest::bytes>>, [:u16 | types], acc) do
+  defp _decode(<<value::16-little, rest::bytes>>, [:u16 | types], acc) do
     _decode(rest, types, [value | acc])
   end
 
-  defp _decode(<<value::little-unsigned, rest::bytes>>, [:u8 | types], acc) do
+  defp _decode(<<value::little, rest::bytes>>, [:u8 | types], acc) do
     _decode(rest, types, [value | acc])
   end
 
   @epoch_date ~D[1970-01-01]
   @epoch_naive_datetime NaiveDateTime.new!(@epoch_date, ~T[00:00:00])
 
-  defp _decode(<<days_since_epoch::16-little-unsigned, rest::bytes>>, [:date | types], acc) do
+  defp _decode(<<days_since_epoch::16-little, rest::bytes>>, [:date | types], acc) do
     date = Date.add(@epoch_date, days_since_epoch)
     _decode(rest, types, [date | acc])
   end
 
-  defp _decode(<<seconds_since_epoch::32-little-unsigned, rest::bytes>>, [:datetime | types], acc) do
+  defp _decode(<<seconds_since_epoch::32-little, rest::bytes>>, [:datetime | types], acc) do
     date_time = NaiveDateTime.add(@epoch_naive_datetime, seconds_since_epoch)
     _decode(rest, types, [date_time | acc])
   end
