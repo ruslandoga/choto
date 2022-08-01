@@ -143,6 +143,18 @@ defmodule Choto do
     {:ok, data} = :gen_tcp.recv(socket, 0)
 
     case decode_all(buffer <> data, acc) do
+      {:more, buffer, inner_acc, acc} -> await_continue(%{conn | buffer: buffer}, inner_acc, acc)
+      {:more, buffer, acc} -> await(%{conn | buffer: buffer}, acc)
+      {:done, buffer, acc} -> {:ok, acc, %{conn | buffer: buffer}}
+    end
+  end
+
+  def await_continue(conn, inner_acc, acc) do
+    %{socket: socket, revision: _revision, buffer: buffer} = conn
+    {:ok, data} = :gen_tcp.recv(socket, 0)
+
+    case decode_all_continue(buffer <> data, inner_acc, acc) do
+      {:more, buffer, inner_acc, acc} -> await_continue(%{conn | buffer: buffer}, inner_acc, acc)
       {:more, buffer, acc} -> await(%{conn | buffer: buffer}, acc)
       {:done, buffer, acc} -> {:ok, acc, %{conn | buffer: buffer}}
     end
@@ -159,8 +171,27 @@ defmodule Choto do
       {:ok, bytes, packet} ->
         decode_all(bytes, [packet | acc])
 
-      {:more, bytes} ->
+      {:more, bytes, inner_acc} ->
+        {:more, bytes, inner_acc, acc}
+
+      :more ->
         {:more, bytes, acc}
+    end
+  end
+
+  defp decode_all_continue(bytes, {kind, inner_acc}, acc) do
+    case decode_continue(bytes, kind, inner_acc) do
+      {:ok, bytes, {:exception, _exception} = exception} ->
+        {:done, bytes, :lists.reverse([exception | acc])}
+
+      {:ok, bytes, :end_of_stream = eos} ->
+        {:done, bytes, :lists.reverse([eos | acc])}
+
+      {:ok, bytes, packet} ->
+        decode_all(bytes, [packet | acc])
+
+      {:more, bytes, inner_acc} ->
+        {:more, bytes, inner_acc, acc}
     end
   end
 
@@ -169,45 +200,55 @@ defmodule Choto do
     :gen_tcp.close(socket)
   end
 
+  defp decode_continue(bytes, kind, inner_acc) do
+    case Decoder.decode_block_continue(bytes, inner_acc) do
+      {:ok, rest, block} -> {:ok, rest, {kind, block}}
+      {:more, rest, block_acc} -> {:more, rest, {kind, block_acc}}
+    end
+  end
+
   # TODO in decode, handle incomplete blocks / messages
   # not just {:ok, rest, decoded} = ...
 
   @doc false
   # TODO what is this 0? name? then better decode it properly
   def decode(<<@server_data, 0, rest::bytes>>) do
-    {:ok, rest, block} = Decoder.decode_block(rest)
-    {:ok, rest, {:data, block}}
+    case Decoder.decode_block(rest) do
+      {:ok, rest, block} -> {:ok, rest, {:data, block}}
+      {:more, rest, block_acc} -> {:more, rest, {:data, block_acc}}
+    end
   end
 
   def decode(<<@server_profile_info, rest::bytes>>) do
-    {:ok, rest, profile_info} =
-      Decoder.decode(rest, [
-        _rows = :varint,
-        _blocks = :varint,
-        _bytes = :varint,
-        _applied_limit = :boolean,
-        _rows_before_limit = :varint,
-        _calculated_rows_before_limit = :boolean
-      ])
+    types = [
+      _rows = :varint,
+      _blocks = :varint,
+      _bytes = :varint,
+      _applied_limit = :boolean,
+      _rows_before_limit = :varint,
+      _calculated_rows_before_limit = :boolean
+    ]
 
-    {:ok, rest, {:profile_info, profile_info}}
+    case Decoder.decode(rest, types) do
+      {:ok, rest, profile_info} -> {:ok, rest, {:profile_info, profile_info}}
+      {:more, _rest, _types, _inner_acc} -> :more
+    end
   end
 
   def decode(<<@server_progress, rest::bytes>>) do
-    {:ok, rest, progress} =
-      Decoder.decode(
-        rest,
-        [
-          _rows = :varint,
-          _bytes = :varint,
-          _total_rows = :varint,
-          # TODO if revision > DBMS_MIN_REVISION_WITH_CLIENT_WRITE_INFO
-          _wrote_rows = :varint,
-          _wrote_bytes = :varint
-        ]
-      )
+    types = [
+      _rows = :varint,
+      _bytes = :varint,
+      _total_rows = :varint,
+      # TODO if revision > DBMS_MIN_REVISION_WITH_CLIENT_WRITE_INFO
+      _wrote_rows = :varint,
+      _wrote_bytes = :varint
+    ]
 
-    {:ok, rest, {:progress, progress}}
+    case Decoder.decode(rest, types) do
+      {:ok, rest, progress} -> {:ok, rest, {:progress, progress}}
+      {:more, _rest, _types, _inner_acc} -> :more
+    end
   end
 
   def decode(<<@server_pong, rest::bytes>>) do
@@ -215,8 +256,10 @@ defmodule Choto do
   end
 
   def decode(<<@server_profile_events, 0, rest::bytes>>) do
-    {:ok, rest, profile_events} = Decoder.decode_block(rest)
-    {:ok, rest, {:profile_events, profile_events}}
+    case Decoder.decode_block(rest) do
+      {:ok, rest, profile_events} -> {:ok, rest, {:profile_events, profile_events}}
+      {:more, rest, block_acc} -> {:more, rest, {:profile_events, block_acc}}
+    end
   end
 
   def decode(<<@server_end_of_stream, rest::bytes>>) do
@@ -224,26 +267,27 @@ defmodule Choto do
   end
 
   def decode(<<@server_exception, rest::bytes>>) do
-    {:ok, rest, exception} =
-      Decoder.decode(rest, [
-        _code = :i32,
-        _name = :string,
-        _message = :string,
-        _stack_trace = :string,
-        _has_nested = :boolean
-      ])
+    types = [
+      _code = :i32,
+      _name = :string,
+      _message = :string,
+      _stack_trace = :string,
+      _has_nested = :boolean
+    ]
 
-    {:ok, rest, {:exception, exception}}
+    case Decoder.decode(rest, types) do
+      {:ok, rest, exception} -> {:ok, rest, {:exception, exception}}
+      {:more, _rest, _types, _inner_acc} -> :more
+    end
   end
 
   # TODO 0 again?
   def decode(<<@server_table_columns, 0, rest::bytes>>) do
-    {:ok, rest, columns} = Decoder.decode(rest, [:string])
-    {:ok, rest, {:table_columns, columns}}
+    case Decoder.decode(rest, [:string]) do
+      {:ok, rest, columns} -> {:ok, rest, {:table_columns, columns}}
+      {:more, _rest, _types, _inner_acc} -> :more
+    end
   end
 
-  # TODO
-  def decode("") do
-    {:more, ""}
-  end
+  def decode(""), do: :more
 end

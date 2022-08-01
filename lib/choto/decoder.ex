@@ -1,6 +1,6 @@
 # based on https://github.com/clickhouse-elixir/clickhousex/blob/master/lib/clickhousex/codec/binary.ex
 defmodule Choto.Decoder do
-  use Bitwise
+  import Bitwise
   # @compile {:bin_opt_info, true}
 
   def decode(bytes, types) do
@@ -17,34 +17,95 @@ defmodule Choto.Decoder do
   # then after benching will decide if something else is needed like varint macros
 
   defp _decode_block(bytes, cols, rows, acc) when cols > 0 do
-    {:ok, bytes, [name, type]} = decode(bytes, [:string, :string])
+    # or just throw?
+    case decode(bytes, [:string, :string]) do
+      {:ok, bytes, [name, type]} ->
+        type =
+          case type do
+            "UInt8" -> :u8
+            "UInt16" -> :u16
+            "UInt32" -> :u32
+            "UInt64" -> :u64
+            "Int8" -> :i8
+            "Int16" -> :i16
+            "Int32" -> :i32
+            "Int64" -> :i64
+            "Float32" -> :f32
+            "Float64" -> :f64
+            # TODO parse enums
+            "Enum8" <> _rest -> :u8
+            "Enum16" <> _rest -> :u8
+            "String" -> :string
+            "Date" -> :date
+            "DateTime" -> :datetime
+          end
 
-    type =
-      case type do
-        "UInt8" -> :u8
-        "UInt16" -> :u16
-        "UInt32" -> :u32
-        "UInt64" -> :u64
-        "Int8" -> :i8
-        "Int16" -> :i16
-        "Int32" -> :i32
-        "Int64" -> :i64
-        "Float32" -> :f32
-        "Float64" -> :f64
-        # TODO parse enums
-        "Enum8" <> _rest -> :u8
-        "Enum16" <> _rest -> :u8
-        "String" -> :string
-        "Date" -> :date
-        "DateTime" -> :datetime
-      end
+        case _decode_times(bytes, type, rows) do
+          {:ok, bytes, values} ->
+            _decode_block(bytes, cols - 1, rows, [[{name, type} | values] | acc])
 
-    {:ok, bytes, values} = decode(bytes, List.duplicate(type, rows))
-    _decode_block(bytes, cols - 1, rows, [[{name, type} | values] | acc])
+          {:more, bytes, types, inner_acc} ->
+            {:more, bytes, {name, type, types, inner_acc, cols, rows, acc}}
+        end
+
+      {:more, bytes, types, inner_acc} ->
+        {:more, bytes, {types, inner_acc, cols, rows, acc}}
+    end
   end
 
   defp _decode_block(bytes, 0, _rows, acc) do
     {:ok, bytes, :lists.reverse(acc)}
+  end
+
+  def decode_block_continue(bytes, {name, type, types, inner_acc, cols, rows, acc}) do
+    case _decode(bytes, types, inner_acc) do
+      {:ok, bytes, values} ->
+        _decode_block(bytes, cols - 1, rows, [[{name, type} | values] | acc])
+
+      {:more, bytes, types, inner_acc} ->
+        {:more, bytes, {name, type, types, inner_acc, cols, rows, acc}}
+    end
+  end
+
+  def decode_block_continue(bytes, {types, inner_acc, cols, rows, acc}) do
+    case decode(bytes, types) do
+      {:ok, bytes, decoded} ->
+        # TODO
+        [name, type] = :lists.reverse(inner_acc) ++ decoded
+
+        type =
+          case type do
+            "UInt8" -> :u8
+            "UInt16" -> :u16
+            "UInt32" -> :u32
+            "UInt64" -> :u64
+            "Int8" -> :i8
+            "Int16" -> :i16
+            "Int32" -> :i32
+            "Int64" -> :i64
+            "Float32" -> :f32
+            "Float64" -> :f64
+            # TODO parse enums
+            "Enum8" <> _rest -> :u8
+            "Enum16" <> _rest -> :u8
+            "String" -> :string
+            "Date" -> :date
+            "DateTime" -> :datetime
+          end
+
+        case _decode_times(bytes, type, rows) do
+          {:ok, bytes, values} ->
+            _decode_block(bytes, cols - 1, rows, [[{name, type} | values] | acc])
+
+          {:more, bytes, types, inner_acc} ->
+            {:more, bytes, {name, type, types, inner_acc, cols, rows, acc}}
+        end
+    end
+  end
+
+  # TODO
+  defp _decode_times(bytes, type, times) do
+    _decode(bytes, List.duplicate(type, times), [])
   end
 
   defp _decode(<<1, rest::bytes>>, [:boolean | types], acc) do
@@ -55,8 +116,8 @@ defmodule Choto.Decoder do
     _decode(rest, types, [false | acc])
   end
 
-  defp _decode(bytes, [:varint | types], acc) do
-    _decode_varint(bytes, 0, 0, types, acc)
+  defp _decode(bytes, [:varint | types] = og_types, acc) do
+    _decode_varint(bytes, types, og_types, acc)
   end
 
   defp _decode(<<value::64-little-signed-float, rest::bytes>>, [:f64 | types], acc) do
@@ -67,8 +128,8 @@ defmodule Choto.Decoder do
     _decode(rest, types, [value | acc])
   end
 
-  defp _decode(bytes, [:string | types], acc) do
-    _decode_string(bytes, types, acc)
+  defp _decode(bytes, [:string | types] = og_types, acc) do
+    _decode_string(bytes, types, og_types, acc)
   end
 
   defp _decode(<<value::64-little-signed, rest::bytes>>, [:i64 | types], acc) do
@@ -120,38 +181,82 @@ defmodule Choto.Decoder do
     {:ok, rest, :lists.reverse(acc)}
   end
 
-  # TODO not necessary <<>>
-  defp _decode(<<>>, types, acc) do
-    {:resume, types, acc}
+  # TODO
+  defp _decode(bytes, types, acc) do
+    {:more, bytes, types, acc}
   end
 
-  defp _decode_varint(<<1::1, value::7, rest::bytes>>, shift, prev_value, types, acc) do
-    _decode_varint(rest, shift + 7, (value <<< shift) + prev_value, types, acc)
-  end
+  varints = [
+    {
+      quote(do: <<0::1, v1::7>>),
+      quote(do: v1)
+    },
+    {
+      quote(do: <<1::1, v1::7, 0::1, v2::7>>),
+      quote(do: (v2 <<< 7) + v1)
+    },
+    {
+      quote(do: <<1::1, v1::7, 1::1, v2::7, 0::1, v3::7>>),
+      quote(do: (v3 <<< 14) + (v2 <<< 7) + v1)
+    },
+    {
+      quote(do: <<1::1, v1::7, 1::1, v2::7, 1::1, v3::7, 0::1, v4::7>>),
+      quote(do: (v4 <<< 21) + (v3 <<< 14) + (v2 <<< 7) + v1)
+    },
+    {
+      quote(do: <<1::1, v1::7, 1::1, v2::7, 1::1, v3::7, 1::1, v4::7, 0::1, v5::7>>),
+      quote(do: (v5 <<< 28) + (v4 <<< 21) + (v3 <<< 14) + (v2 <<< 7) + v1)
+    },
+    {
+      quote(do: <<1::1, v1::7, 1::1, v2::7, 1::1, v3::7, 1::1, v4::7, 1::1, v5::7, 0::1, v6::7>>),
+      quote(do: (v6 <<< 35) + (v5 <<< 28) + (v4 <<< 21) + (v3 <<< 14) + (v2 <<< 7) + v1)
+    },
+    {
+      quote(
+        do:
+          <<1::1, v1::7, 1::1, v2::7, 1::1, v3::7, 1::1, v4::7, 1::1, v5::7, 1::1, v6::7, 0::1,
+            v7::7>>
+      ),
+      quote(
+        do: (v7 <<< 42) + (v6 <<< 35) + (v5 <<< 28) + (v4 <<< 21) + (v3 <<< 14) + (v2 <<< 7) + v1
+      )
+    },
+    {
+      quote(
+        do:
+          <<1::1, v1::7, 1::1, v2::7, 1::1, v3::7, 1::1, v4::7, 1::1, v5::7, 1::1, v6::7, 1::1,
+            v7::7, 0::1, v8::7>>
+      ),
+      quote(
+        do:
+          (v7 <<< 49) + (v7 <<< 42) + (v6 <<< 35) + (v5 <<< 28) + (v4 <<< 21) + (v3 <<< 14) +
+            (v2 <<< 7) + v1
+      )
+    }
+  ]
 
-  defp _decode_varint(<<0::1, value::7, rest::bytes>>, shift, prev_value, types, acc) do
-    _decode(rest, types, [prev_value + (value <<< shift) | acc])
-  end
-
-  @compile inline: [_decode_string: 3]
-  defp _decode_string(bytes, types, acc) do
-    _decode_string_lenght(bytes, 0, 0, types, acc)
-  end
-
-  defp _decode_string_lenght(<<1::1, value::7, rest::bytes>>, shift, prev_value, types, acc) do
-    _decode_string_lenght(rest, shift + 7, (value <<< shift) + prev_value, types, acc)
-  end
-
-  defp _decode_string_lenght(<<0::1, value::7, rest::bytes>>, shift, prev_value, types, acc) do
-    len = prev_value + (value <<< shift)
-
-    case rest do
-      <<string::size(len)-bytes, rest::bytes>> ->
-        _decode(rest, types, [string | acc])
-
-      _other ->
-        # TOOD don't lose string
-        {:resume, types, acc}
+  for {input, output} <- varints do
+    defp _decode_varint(<<unquote(input), rest::bytes>>, types, _, acc) do
+      _decode(rest, types, [unquote(output) | acc])
     end
+  end
+
+  defp _decode_varint(rest, _, types, acc) do
+    {:more, rest, types, acc}
+  end
+
+  strings =
+    for {input, output} <- varints do
+      quote(do: <<unquote(input), v::size(unquote(output))-bytes>>)
+    end
+
+  for input <- strings do
+    defp _decode_string(<<unquote(input), rest::bytes>>, types, _, acc) do
+      _decode(rest, types, [unquote(quote(do: v)) | acc])
+    end
+  end
+
+  defp _decode_string(rest, _, types, acc) do
+    {:more, rest, types, acc}
   end
 end

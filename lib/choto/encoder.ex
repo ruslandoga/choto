@@ -1,6 +1,6 @@
 # based on https://github.com/clickhouse-elixir/clickhousex/blob/master/lib/clickhousex/codec/binary.ex
 defmodule Choto.Encoder do
-  use Bitwise
+  import Bitwise
 
   def encode(:varint, num) when num < 128, do: <<num>>
   # TODO

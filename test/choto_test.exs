@@ -136,7 +136,7 @@ defmodule ChotoTest do
     :ok =
       Choto.query(conn, "INSERT INTO my_first_table (user_id, message, timestamp, metric) VALUES")
 
-    today_date = Date.utc_today()
+    today_date = ~D[2022-07-21]
     yesterday_date = Date.add(today_date, -1)
     today = NaiveDateTime.new!(today_date, ~T[00:00:00])
     yesterday = NaiveDateTime.new!(yesterday_date, ~T[00:00:00])
@@ -182,20 +182,46 @@ defmodule ChotoTest do
 
     assert conn.buffer == ""
 
-    # TODO
-    # assert :ok = Choto.query(conn, "select * from my_first_table")
-    # assert {:ok, packets, conn} = Choto.await(conn)
+    assert :ok = Choto.query(conn, "select * from my_first_table")
+    assert {:ok, packets, _conn} = Choto.await(conn)
 
-    # assert Enum.filter(packets, fn packet -> match?({:data, _}, packet) end) ==
-    #          [
-    #            {:data,
-    #             [
-    #               [{"user_id", :u32}],
-    #               [{"message", :string}],
-    #               [{"timestamp", :datetime}],
-    #               [{"metric", :f32}]
-    #             ]},
-    #            {:data, []}
-    #          ]
+    assert Enum.filter(packets, fn packet -> match?({:data, _}, packet) end) ==
+             [
+               {:data,
+                [
+                  [{"user_id", :u32}],
+                  [{"message", :string}],
+                  [{"timestamp", :datetime}],
+                  [{"metric", :f32}]
+                ]},
+               {:data,
+                [
+                  [{"user_id", :u32}, 101, 101, 102, 102],
+                  [
+                    {"message", :string},
+                    "Hello, ClickHouse!",
+                    "Granules are the smallest chunks of data read",
+                    "Insert a lot of rows per batch",
+                    "Sort your data based on your commonly-used queries"
+                  ],
+                  [
+                    {"timestamp", :datetime},
+                    ~N[2022-07-21 14:24:37],
+                    ~N[2022-07-21 14:24:37],
+                    ~N[2022-07-20 00:00:00],
+                    ~N[2022-07-21 00:00:00]
+                  ],
+                  [
+                    {"metric", :f32},
+                    -1.0,
+                    3.141590118408203,
+                    1.4142099618911743,
+                    2.7179999351501465
+                  ]
+                ]},
+               {:data, []}
+             ]
+
+    assert conn.buffer == ""
   end
 end
