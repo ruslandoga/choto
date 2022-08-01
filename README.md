@@ -10,6 +10,6 @@ iex> {:ok, conn} = Choto.query(conn, "select 1 + 1")
 iex> {:ok, _decoded_packets, conn} = Choto.await(conn)
 ```
 
-[`:choto_dbconnection`]()
+[`:choto_dbconnection`](https://github.com/ruslandoga/choto_dbconnection)
 
 [`:choto_ecto`]()
