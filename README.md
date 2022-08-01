@@ -1,6 +1,6 @@
 ### Choto
 
-Native [ClickHouse](https://github.com/ClickHouse/ClickHouse) protocol + client, API (to be) modelled after [`:mint.`](https://github.com/elixir-mint/mint)
+Native [ClickHouse](https://github.com/ClickHouse/ClickHouse) protocol + client.
 
 ```elixir
 iex> {:ok, conn} = Choto.connect(_hostname = {127, 0, 0, 1}, _port = 9000, _options = [])
