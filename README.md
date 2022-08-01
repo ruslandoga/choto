@@ -12,4 +12,4 @@ iex> {:ok, _decoded_packets, conn} = Choto.await(conn)
 
 [`:choto_dbconnection`](https://github.com/ruslandoga/choto_dbconnection)
 
-[`:choto_ecto`]()
+[`:choto_ecto`](https://github.com/ruslandoga/choto_ecto)
