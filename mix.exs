@@ -5,27 +5,27 @@ defmodule Choto.MixProject do
     [
       app: :choto,
       version: "0.1.0",
-      # TODO?
-      elixir: "~> 1.12",
+      elixir: "~> 1.14",
       elixirc_paths: elixirc_paths(Mix.env()),
-      start_permanent: Mix.env() == :prod,
       deps: deps()
     ]
   end
 
+  # Run "mix help compile.app" to learn about applications.
   def application do
-    [
-      extra_applications: [:logger]
-    ]
+    []
   end
 
+  # Specifies which paths to compile per environment.
   # defp elixirc_paths(:test), do: ["lib", "test/support"]
-  defp elixirc_paths(:dev), do: ["lib", "dev"]
   defp elixirc_paths(_env), do: ["lib"]
 
+  # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:nimble_lz4, "~> 0.1.2"},
+      {:castore, "~> 0.1.0 or ~> 1.0", optional: true},
+      {:dialyxir, "~> 1.3", only: [:dev, :test], runtime: false},
+      {:ex_doc, "~> 0.29", only: :dev},
       {:rexbug, "~> 1.0", only: [:dev, :test]},
       {:benchee, "~> 1.1", only: [:bench], runtime: false}
     ]

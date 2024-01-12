@@ -1,15 +1,9 @@
-### Choto
+# Choto
 
-Native [ClickHouse](https://github.com/ClickHouse/ClickHouse) protocol + client.
+Native [ClickHouse](https://github.com/ClickHouse/ClickHouse) client.
 
 ```elixir
-iex> {:ok, conn} = Choto.connect(_hostname = {127, 0, 0, 1}, _port = 9000, _options = [])
-iex> {:ok, conn} = Choto.query(conn, "select 1 + 1")
-
-# See tests for more
-iex> {:ok, _decoded_packets, conn} = Choto.await(conn)
+iex> {:ok, conn} = Choto.connect(:tcp, _hostname = {127, 0, 0, 1}, _port = 9000)
+iex> {:ok, ref, conn} = Choto.send(conn, "select 1 + 1")
+iex> {:ok, responses} = Choto.recv(conn, ref, _timeout = :timer.seconds(5))
 ```
-
-[`:choto_dbconnection`](https://github.com/ruslandoga/choto_dbconnection)
-
-[`:choto_ecto`](https://github.com/ruslandoga/choto_ecto)
